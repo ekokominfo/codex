@@ -21,7 +21,22 @@ npm run build
 npm run preview -- --port 4173
 ```
 
-Build statis tersedia di `dist/` dan dapat di-host dengan penyedia hosting statis. Deploy pada root domain karena entrypoint menggunakan path absolut.
+Build statis tersedia di `dist/` dan dapat di-host dengan penyedia hosting statis. Build biasa menggunakan root domain.
+
+## GitHub Pages
+
+Workflow `.github/workflows/deploy-pages.yml` membangun website dengan base path `/codex/`, mengunggah artifact, lalu menerbitkannya melalui GitHub Pages setiap ada push ke `main`.
+
+Aktifkan **Settings → Pages → Build and deployment → Source: GitHub Actions** pada repositori. Bila workflow sudah berjalan sebelum Pages diaktifkan, jalankan ulang melalui **Actions → Deploy Kage to GitHub Pages → Run workflow**.
+
+Alamat yang dituju: `https://ekokominfo.github.io/codex/`. Status online hanya dapat dipastikan setelah deployment GitHub berhasil; push kode saja tidak mengaktifkan Pages.
+
+Untuk memeriksa build dengan path yang sama secara lokal:
+
+```sh
+npm run build -- --base=/codex/
+npm run preview -- --base=/codex/ --port 4173 --strictPort
+```
 
 ## Interaksi
 
