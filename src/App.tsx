@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useJourneyMotion } from './useJourneyMotion';
 
 const TempleScene = lazy(() => import('./TempleScene'));
 const spaces = [
@@ -49,6 +50,9 @@ export default function App() {
   const [visitSaved, setVisitSaved] = useState(false);
   const [visitDate, setVisitDate] = useState('');
   const [sceneState, setSceneState] = useState<'loading' | 'ready' | 'fallback'>('loading');
+  const [motionEnabled, setMotionEnabled] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const motionChosen = useRef(false);
+  const { journey, progress, chapter, travelTo } = useJourneyMotion(motionEnabled);
   const dialog = useRef<HTMLDialogElement>(null);
   const [minDate] = useState(() => { const date = new Date(); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 10); });
 
@@ -60,10 +64,17 @@ export default function App() {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const change = () => { if (!motionChosen.current) setMotionEnabled(!preference.matches); };
+    preference.addEventListener('change', change);
+    return () => preference.removeEventListener('change', change);
+  }, []);
+
   function openVisit() { setVisitSaved(false); dialog.current?.showModal(); setMenuOpen(false); }
   function saveVisit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setVisitSaved(true); }
 
-  return <>
+  return <div className="app-shell" data-motion={motionEnabled ? 'on' : 'off'}>
     <a className="skip-link" href="#tentang">Lewati ke konten</a>
     <header className="site-header">
       <a className="wordmark" href="#beranda" aria-label="Kage beranda">KAGE<span className="brand-seal" lang="ja">影</span></a>
@@ -74,20 +85,29 @@ export default function App() {
     </header>
 
     <main>
-      <section className="hero" id="beranda" aria-labelledby="hero-heading">
+      <div className="journey" id="beranda" ref={journey}>
+      <section className="hero" id="perjalanan" aria-labelledby="hero-heading">
         <div className="hero-landscape" aria-hidden="true"><div className="fallback-moon" /><div className="fallback-mountain mountain-one" /><div className="fallback-mountain mountain-two" /><div className="fallback-gate"><i /><b /><em /></div></div>
-        <Suspense fallback={null}><TempleScene theme={spaces[activeSpace].theme} onStatus={setSceneState} /></Suspense>
+        <Suspense fallback={null}><TempleScene theme={spaces[activeSpace].theme} progress={progress} motionEnabled={motionEnabled} onStatus={setSceneState} /></Suspense>
         <div className="hero-shade" />
+        <div className="atmosphere" aria-hidden="true"><div className="mist mist-near" /><div className="mist mist-far" /><div className="light-beam" /></div>
         <div className="hero-content">
           <div className="eyebrow"><span className="tiny-line" /> DI ANTARA CAHAYA DAN SUNYI</div>
           <h1 id="hero-heading">Ada cerita<br />di dalam<br /><em>keheningan.</em></h1>
           <p>Sebuah langkah menjauh dari riuh.<br />Sebuah perjalanan kembali pada diri.</p>
-          <a className="primary-button" href="#ruang">Mulai perjalanan <Arrow /></a>
+          <a className="primary-button" href={motionEnabled ? '#perjalanan' : '#ruang'} onClick={event => { if (motionEnabled) { event.preventDefault(); travelTo(0.42); } }}>Mulai perjalanan <Arrow /></a>
+          <span className="motion-hint">{motionEnabled ? 'Gulir untuk melangkah masuk ke dalam kuil' : 'Mode tenang aktif. Efek gerakan dinonaktifkan.'}</span>
+        </div>
+        <div className="journey-story" aria-hidden="true">
+          <div className="journey-chapter" key={chapter}><span className="eyebrow">{spaces[chapter].number} — {spaces[chapter].name.toUpperCase()}</span><h2>{chapter === 0 ? <>Lewati gerbang.<br /><em>Tinggalkan riuh.</em></> : chapter === 1 ? <>Ikuti cahaya.<br /><em>Perlambat langkah.</em></> : <>Anda telah tiba.<br /><em>Selamat menemukan sunyi.</em></>}</h2><p>{spaces[chapter].text}</p></div>
+          <a className="journey-exit" href="#tentang">Lanjut ke cerita Kage <Arrow /></a>
         </div>
         <div className="vertical-script" lang="ja">静けさの中に、美しさがある<span>THERE IS BEAUTY IN STILLNESS</span></div>
-        <div className="hero-bottom"><a className="scroll-hint" href="#tentang"><span className="scroll-line" />GULIR UNTUK MENJELAJAHI</a><span className="scene-caption">{sceneState === 'fallback' ? 'LANSKAP SENJA' : 'SENJA DI KAGE'} <i /> 夕暮れ</span><AmbientSound /></div>
+        <div className="hero-bottom"><a className="scroll-hint" href="#tentang"><span className="scroll-line" />GULIR UNTUK MENJELAJAHI</a><span className="scene-caption">{sceneState === 'fallback' ? 'LANSKAP SENJA' : 'SENJA DI KAGE'} <i /> 夕暮れ</span><div className="experience-controls"><button className="motion-toggle" aria-label={motionEnabled ? 'Matikan efek gerakan' : 'Aktifkan efek gerakan'} aria-pressed={motionEnabled} onClick={() => { motionChosen.current = true; setMotionEnabled(!motionEnabled); }}><span aria-hidden="true">{motionEnabled ? '◉' : '○'}</span> Efek {motionEnabled ? 'aktif' : 'nonaktif'}</button><AmbientSound /></div></div>
+        <nav className="journey-waypoints" aria-label="Tahap perjalanan">{spaces.map((space, index) => <button key={space.number} aria-current={chapter === index ? 'step' : undefined} onClick={() => travelTo([0, 0.52, 0.96][index])} aria-label={`Menuju ${space.name}`}><span>{space.number}</span><span>{space.name}</span></button>)}<div className="journey-progress" aria-hidden="true"><i /></div></nav>
         <div className="hero-stamp" lang="ja">間</div>
       </section>
+      </div>
 
       <section className="philosophy section-padding" id="tentang" aria-labelledby="philosophy-heading">
         <div className="section-label reveal"><span>01 — FILOSOFI KAGE</span><span lang="ja">陰と光</span></div>
@@ -110,5 +130,5 @@ export default function App() {
     <footer className="site-footer"><a className="wordmark" href="#beranda">KAGE<span className="brand-seal" lang="ja">影</span></a><p>Dibuat untuk jeda di antara hari.</p><span>© {new Date().getFullYear()} Kage</span><a href="#beranda">Kembali ke atas ↑</a></footer>
 
     <dialog ref={dialog} className="visit-dialog" onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }} aria-labelledby="visit-heading"><button className="dialog-close" aria-label="Tutup rencana kunjungan" onClick={() => dialog.current?.close()}>×</button>{visitSaved ? <div className="visit-success" role="status"><span className="success-mark">✓</span><div className="eyebrow">SEBUAH JEDA TELAH DIPILIH</div><h2 id="visit-heading">Sampai jumpa<br /><em>di dalam sunyi.</em></h2><p>Rencana Anda untuk {new Date(`${visitDate}T12:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} sudah dicatat di halaman ini. Kage adalah pengalaman digital; tidak ada reservasi fisik atau data yang dikirim.</p><button className="primary-button" onClick={() => { dialog.current?.close(); document.getElementById('beranda')?.scrollIntoView({ behavior: 'smooth' }); }}>Masuk ke Kage <Arrow /></button></div> : <form onSubmit={saveVisit}><div className="eyebrow">SEBUAH WAKTU UNTUK DIRI</div><h2 id="visit-heading">Rencanakan<br /><em>jeda Anda.</em></h2><p>Pilih satu hari untuk melambat. Ini adalah pengingat di halaman ini, bukan pemesanan tempat fisik.</p><label htmlFor="visit-date">Tanggal kunjungan digital</label><input required type="date" id="visit-date" min={minDate} value={visitDate} onChange={event => setVisitDate(event.target.value)} /><label htmlFor="visit-space">Ruang yang ingin dijelajahi</label><select id="visit-space" value={activeSpace} onChange={event => setActiveSpace(Number(event.target.value))}>{spaces.map((space, index) => <option value={index} key={space.theme}>{space.name}</option>)}</select><button className="primary-button" type="submit">Catat rencana <Arrow /></button></form>}</dialog>
-  </>;
+  </div>;
 }

@@ -41,6 +41,9 @@ npm run preview -- --base=/codex/ --port 4173 --strictPort
 ## Interaksi
 
 - Navigasi dan tombol perjalanan menggulir ke bagian halaman.
+- Saat efek aktif, pembuka tetap di layar selama tiga tinggi viewport. Scroll menggerakkan kamera melewati gerbang, menyusuri lentera, hingga mendekati kuil. Kontrol tahap dapat digunakan untuk berpindah langsung.
+- Kursor menggeser pandangan, kabut melintas, kunang-kunang berpendar, kelopak jatuh, dan lapisan ilustrasi memiliki kedalaman parallax saat scroll.
+- Tombol **Efek aktif/nonaktif** mengontrol seluruh gerakan. Preferensi sistem `prefers-reduced-motion` menonaktifkannya secara default; pengguna dapat mengaktifkannya secara eksplisit.
 - Tiga tab ruang mengganti ilustrasi dan sudut pandang adegan 3D. Tab mendukung tombol panah, Home, dan End.
 - Suara ambien menggunakan Web Audio API dan hanya aktif setelah pengguna memilihnya.
 - Dialog kunjungan mencatat rencana **sementara di halaman**. Tidak ada pemesanan tempat fisik, backend, atau pengiriman data.

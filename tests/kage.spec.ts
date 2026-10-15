@@ -44,6 +44,7 @@ test('mobile: navigation, no overflow, reduced motion and context-loss recovery'
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Aktifkan efek gerakan' })).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.temple-scene canvas')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Buka menu' }).click();
@@ -64,4 +65,45 @@ test('mobile: navigation, no overflow, reduced motion and context-loss recovery'
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await page.locator('canvas').evaluate(canvas => { (canvas as HTMLCanvasElement & { recovery: WEBGL_lose_context }).recovery.restoreContext(); });
   await expect(page.locator('.scene-caption')).toContainText('SENJA DI KAGE');
+});
+
+test('scroll journey keeps the scene pinned, advances through the temple and can be disabled', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  const canvas = page.locator('.temple-scene canvas');
+  await expect(canvas).toBeVisible();
+  const entrance = await canvas.screenshot();
+  await page.evaluate(() => window.scrollTo({ top: window.innerHeight * 1.1, behavior: 'instant' }));
+  await expect(page.locator('.journey-story h2')).toContainText('Ikuti cahaya.');
+  await expect(page.locator('.hero-content')).toHaveCSS('opacity', '0');
+  expect(Math.abs((await page.locator('.hero').boundingBox())!.y)).toBeLessThan(1);
+  await page.screenshot({ path: '/tmp/kage-journey-middle.png' });
+  expect((await canvas.screenshot()).equals(entrance)).toBe(false);
+  await page.getByRole('button', { name: 'Menuju Paviliun sunyi' }).click();
+  await expect(page.locator('.journey-story h2')).toContainText('Anda telah tiba.');
+  await expect(page.getByRole('button', { name: 'Menuju Paviliun sunyi' })).toHaveAttribute('aria-current', 'step');
+  await page.screenshot({ path: '/tmp/kage-journey-temple.png' });
+  await page.getByRole('button', { name: 'Matikan efek gerakan' }).click();
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  await expect(page.getByRole('button', { name: 'Aktifkan efek gerakan' })).toHaveAttribute('aria-pressed', 'false');
+  expect(Math.abs((await page.locator('.journey').boundingBox())!.height - 900)).toBeLessThan(2);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('mobile users can opt into the journey with reduced motion enabled', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await expect(page.locator('.temple-scene canvas')).toBeVisible();
+  await page.getByRole('button', { name: 'Aktifkan efek gerakan' }).click();
+  await expect(page.getByRole('button', { name: 'Matikan efek gerakan' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('link', { name: 'Mulai perjalanan' }).click();
+  await expect(page.locator('.journey-story h2')).toContainText('Ikuti cahaya.');
+  expect(Math.abs((await page.locator('.hero').boundingBox())!.y)).toBeLessThan(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: '/tmp/kage-mobile-journey.png' });
 });

@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react';
+import type { RefObject } from 'react';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-type Props = { theme: string; onStatus: (status: 'ready' | 'fallback') => void };
+type Props = { theme: string; progress: RefObject<number>; motionEnabled: boolean; onStatus: (status: 'ready' | 'fallback') => void };
 
-export default function TempleScene({ theme, onStatus }: Props) {
+export default function TempleScene({ theme, progress, motionEnabled, onStatus }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const themeRef = useRef(theme);
   useEffect(() => { themeRef.current = theme; }, [theme]);
+  const motionRef = useRef(motionEnabled);
+  useEffect(() => { motionRef.current = motionEnabled; }, [motionEnabled]);
 
   useEffect(() => {
     const host = container.current!;
@@ -130,10 +133,36 @@ export default function TempleScene({ theme, onStatus }: Props) {
     const moonMat = new THREE.MeshBasicMaterial({ color: '#e8d9b4' }); resources.push(moonMat);
     const moon = new THREE.Mesh(moonGeometry, moonMat); moon.position.set(-6, 24, -58); scene.add(moon);
 
-    const particlePositions = new Float32Array(100 * 3);
-    for (let i = 0; i < 100; i++) { particlePositions[i * 3] = random() * 40 - 20; particlePositions[i * 3 + 1] = random() * 15; particlePositions[i * 3 + 2] = random() * 40 - 18; }
+    const particlePositions = new Float32Array(240 * 3);
+    const particlePhases = new Float32Array(240);
+    for (let i = 0; i < 240; i++) { particlePositions[i * 3] = random() * 32 - 12; particlePositions[i * 3 + 1] = random() * 12; particlePositions[i * 3 + 2] = random() * 46 - 20; particlePhases[i] = random() * Math.PI * 2; }
     const particleGeometry = new THREE.BufferGeometry(); particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3)); resources.push(particleGeometry);
-    const particleMaterial = new THREE.PointsMaterial({ color: '#efbf74', size: 0.038, transparent: true, opacity: 0.6, depthWrite: false }); resources.push(particleMaterial);
+    particleGeometry.setAttribute('aPhase', new THREE.BufferAttribute(particlePhases, 1));
+    const particleMaterial = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `
+        uniform float uTime;
+        attribute float aPhase;
+        varying float vGlow;
+        void main() {
+          vec3 p = position;
+          p.x += sin(uTime * 0.35 + aPhase) * 0.65;
+          p.y += sin(uTime * 0.6 + aPhase * 2.0) * 0.45;
+          vec4 viewPosition = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * viewPosition;
+          gl_PointSize = clamp(150.0 / max(1.0, -viewPosition.z), 1.5, 9.0);
+          vGlow = 0.45 + 0.55 * pow(sin(uTime * 0.9 + aPhase) * 0.5 + 0.5, 2.0);
+        }`,
+      fragmentShader: `
+        varying float vGlow;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          float glow = pow(1.0 - d * 2.0, 1.6);
+          gl_FragColor = vec4(1.0, 0.72, 0.3, glow * vGlow * 0.85);
+        }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }); resources.push(particleMaterial);
     const particles = new THREE.Points(particleGeometry, particleMaterial); scene.add(particles);
 
     // All architecture is static. Batch it by material so the forest and temple
@@ -155,9 +184,23 @@ export default function TempleScene({ theme, onStatus }: Props) {
     }
     sourceMeshes.forEach(mesh => mesh.removeFromParent());
 
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const petalGeometry = new THREE.PlaneGeometry(0.14, 0.25); resources.push(petalGeometry);
+    const petalMaterial = material('#dbaf91', { side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+    const petals = new THREE.InstancedMesh(petalGeometry, petalMaterial, 32);
+    const petalSeeds = Array.from({ length: 32 }, () => ({ x: random() * 24 - 8, y: random() * 18, z: random() * 35 - 14, phase: random() * 8 }));
+    const petalTransform = new THREE.Object3D(); petals.frustumCulled = false; scene.add(petals);
+
     let pointerX = 0; let pointerY = 0; let frame = 0; let elapsed = 0; let last = 0; let visible = true; let lost = false; let disposed = false;
     const target = new THREE.Vector3(0, 4.5, -9);
+    const cameraPath = [
+      { at: 0, position: new THREE.Vector3(10.5, 7.5, 28), target: new THREE.Vector3(-1.8, 4.2, -9) },
+      { at: 0.35, position: new THREE.Vector3(4.6, 4.9, 14), target: new THREE.Vector3(3.2, 4.5, -10) },
+      { at: 0.7, position: new THREE.Vector3(3.5, 4.6, 3.5), target: new THREE.Vector3(3.1, 4.9, -11) },
+      { at: 1, position: new THREE.Vector3(3.2, 5.2, -3.5), target: new THREE.Vector3(3, 4.8, -12) },
+    ];
+    const desiredPosition = new THREE.Vector3(); const desiredTarget = new THREE.Vector3();
+    const dusk = new THREE.Color('#263c37'); const night = new THREE.Color('#172b2c');
+    const sky = scene.background as THREE.Color;
     function resize() { const { width, height } = host.getBoundingClientRect(); camera.aspect = width / Math.max(height, 1); camera.updateProjectionMatrix(); renderer.setSize(width, height); draw(); }
     function draw() { if (disposed || lost) return; renderer.render(scene, camera); }
     function animate(now: number) {
@@ -168,15 +211,40 @@ export default function TempleScene({ theme, onStatus }: Props) {
         const dt = Math.min((now - last) / 1000, 0.08); last = now; elapsed += dt;
         const mobile = host.clientWidth < 760;
         const selected = themeRef.current;
-        const desiredX = selected === 'garden' ? 10 : selected === 'temple' ? 4 : 10.5;
-        const desiredZ = selected === 'temple' ? 12 : selected === 'garden' ? 24 : 25;
-        const movement = reducedMotion.matches ? 0 : 1;
-        const desiredPosition = new THREE.Vector3(desiredX + pointerX * 0.65 * movement, (mobile ? 7.2 : 7.5) + pointerY * 0.3 * movement, mobile ? desiredZ + 7 : desiredZ);
+        const movingEnabled = motionRef.current;
+        const distance = movingEnabled ? THREE.MathUtils.clamp(progress.current, 0, 1) : 0;
+        let segment = 0;
+        while (segment < cameraPath.length - 2 && distance > cameraPath[segment + 1].at) segment++;
+        const from = cameraPath[segment]; const to = cameraPath[segment + 1];
+        const t = THREE.MathUtils.smoothstep(distance, from.at, to.at);
+        desiredPosition.lerpVectors(from.position, to.position, t);
+        desiredTarget.lerpVectors(from.target, to.target, t);
+        const startWeight = 1 - THREE.MathUtils.smoothstep(distance, 0, 0.35);
+        desiredPosition.x += (selected === 'garden' ? 3 : selected === 'temple' ? -6.5 : 0) * startWeight;
+        desiredPosition.z += (selected === 'temple' ? -9 : 0) * startWeight;
+        if (mobile) { desiredPosition.z += 7 * (1 - distance); desiredTarget.x += 4.3 * startWeight; }
+        if (movingEnabled) {
+          desiredPosition.x += pointerX * 1.8 + Math.sin(elapsed * 0.22) * 0.22;
+          desiredPosition.y += pointerY * 0.6 + Math.sin(elapsed * 0.3) * 0.12;
+        }
         const moving = camera.position.distanceToSquared(desiredPosition) > 0.0001;
-        camera.position.lerp(desiredPosition, reducedMotion.matches ? 1 : 0.04);
-        target.set(mobile ? 2.5 : -1.8, 4.2, -9); camera.lookAt(target);
-        if (!reducedMotion.matches) { particles.rotation.y = elapsed * 0.009; particles.position.y = Math.sin(elapsed * 0.14) * 0.35; templeLight.intensity = 38 + Math.sin(elapsed * 2) * 1.5; }
-        if (!reducedMotion.matches || moving) draw();
+        const smoothing = movingEnabled ? 1 - Math.exp(-dt * 5) : 1;
+        camera.position.lerp(desiredPosition, smoothing); target.lerp(desiredTarget, smoothing); camera.lookAt(target);
+        sky.copy(dusk).lerp(night, distance);
+        (scene.fog as THREE.FogExp2).color.copy(sky);
+        (scene.fog as THREE.FogExp2).density = 0.023 - distance * 0.009;
+        petals.visible = movingEnabled;
+        if (movingEnabled) {
+          particleMaterial.uniforms.uTime.value = elapsed;
+          templeLight.intensity = 38 + Math.sin(elapsed * 2) * 2.5;
+          petalSeeds.forEach((petal, index) => {
+            petalTransform.position.set(petal.x + Math.sin(elapsed * 0.3 + petal.phase) * 1.4, ((petal.y - elapsed * 0.55) % 18 + 18) % 18, petal.z + Math.sin(elapsed * 0.2 + petal.phase));
+            petalTransform.rotation.set(elapsed * 0.8 + petal.phase, elapsed * 0.3, Math.sin(elapsed * 0.5 + petal.phase));
+            petalTransform.updateMatrix(); petals.setMatrixAt(index, petalTransform.matrix);
+          });
+          petals.instanceMatrix.needsUpdate = true;
+        }
+        if (movingEnabled || moving) draw();
       }
       frame = requestAnimationFrame(animate);
     }
@@ -195,8 +263,8 @@ export default function TempleScene({ theme, onStatus }: Props) {
       disposed = true; stop(); observer.disconnect(); intersection.disconnect();
       window.removeEventListener('pointermove', pointer); document.removeEventListener('visibilitychange', visibility);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost); renderer.domElement.removeEventListener('webglcontextrestored', contextRestored);
-      resources.forEach(resource => resource.dispose()); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); scene.clear();
+      resources.forEach(resource => resource.dispose()); petals.dispose(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); scene.clear();
     };
-  }, [onStatus]);
+  }, [onStatus, progress]);
   return <div className="temple-scene" ref={container} aria-hidden="true" />;
 }
